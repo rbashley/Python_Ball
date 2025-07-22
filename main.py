@@ -28,7 +28,7 @@ def main():
 
     # Run the program in a loop
     while True:
-        vpython.rate(1)  # Limit the loop to 1 iterations per second
+        vpython.rate(30)  # Limit the loop to 30 iterations per second
         gameObj.display()  # Continuously update the display
 
 main()
