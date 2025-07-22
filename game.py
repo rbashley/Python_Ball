@@ -1,35 +1,36 @@
 import vpython
+import numpy
 
 class creature:
-    def __init__(self, name, location):
+    def __init__(self, name, location, world):
         self.name = name
+        self.world = world  # Reference to the world/grid
+        self.heading = numpy.degrees(0)  # Initialize heading in degrees
         self.location = location
         self.radius = 0.5
-        self.selfObject = vpython.sphere(pos=vpython.vector(*location), radius=self.radius, color=vpython.color.red)
 
-    def move(self, new_location):
-        # Adjust bounds to account for the radius of the sphere
-        clamped_location = (
-            max(self.radius, min(new_location[0], 10 - self.radius)),  # Clamp X to [radius, 10 - radius]
-            max(self.radius, min(new_location[1], 10 - self.radius)),  # Clamp Y to [radius, 10 - radius]
-            max(self.radius, min(new_location[2], 10 - self.radius))   # Clamp Z to [radius, 10 - radius]
-        )
-        self.location = clamped_location
-        self.selfObject.pos = vpython.vector(*self.location)  # Update the visual position
-        print(f"{self.name} moved to {self.location}")
+        # Create the body as a red cube
+        self.body = vpython.box(pos=vpython.vector(*location), size=vpython.vector(1, 1, 1), color=vpython.color.red)
 
-    def up(self):
-        self.move((self.location[0], self.location[1] + 1, self.location[2]))
-    def down(self):
-        self.move((self.location[0], self.location[1] - 1, self.location[2]))
-    def left(self):
-        self.move((self.location[0] - 1, self.location[1], self.location[2]))
-    def right(self):
-        self.move((self.location[0] + 1, self.location[1], self.location[2]))
-    def forward(self):
-        self.move((self.location[0], self.location[1], self.location[2] + 1))
-    def backward(self):
-        self.move((self.location[0], self.location[1], self.location[2] - 1))
+    def forward(self, vector=1):
+        # Move the creature forward in the direction of its heading
+        self.world.handle_movement(self, vector)
+
+    def backward(self, vector=-1):
+        # Move the creature backward in the direction of its heading
+        self.world.handle_movement(self, vector)
+
+    def rotate(self, angle):
+        # Rotate the creature's heading by the specified angle
+        self.heading += angle
+
+        if self.heading >= 360:
+            self.heading -= 360
+        elif self.heading < 0:
+            self.heading += 360
+
+        # Update the body orientation based on the new heading
+        self.body.rotate(angle=numpy.radians(angle), axis=vpython.vector(0, 1, 0), origin=self.body.pos)
 
 class grid:
     def __init__(self):
@@ -39,7 +40,31 @@ class grid:
 
     def add_creature(self, creature):
         self.creatures.append(creature)
-        print(f"{creature.name} added to the grid at {creature.location}")
+        #print(f"{creature.name} added to the grid at {creature.location}")
+
+    def handle_movement(self, creature, direction):
+        # Calculate the movement vector based on the creature's heading
+        heading_radians = numpy.radians(creature.heading)
+        movement_vector = vpython.vector(
+            direction * numpy.cos(heading_radians),  # X component
+            0,  # Y component (no vertical movement in this example)
+            direction * numpy.sin(heading_radians)   # Z component
+        )
+
+        # Update the creature's position
+        new_position = vpython.vector(*creature.location) + movement_vector
+
+        # Ensure the creature stays within the grid boundaries
+        new_position.x = max(creature.radius, min(self.size[0] - creature.radius, new_position.x))
+        new_position.y = max(creature.radius, min(self.size[1] - creature.radius, new_position.y))
+        new_position.z = max(creature.radius, min(self.size[2] - creature.radius, new_position.z))
+
+        # Update the creature's location and body position
+        creature.location = (new_position.x, new_position.y, new_position.z)
+        creature.body.pos = new_position
+
+        # Print the new map position
+        print(f"{creature.name} moved to map position {creature.location}")
 
     def display(self):
         if not self.grid_initialized:
@@ -63,16 +88,32 @@ class grid:
         # Update the positions of creatures
         for creature in self.creatures:
             radius = creature.radius  # Use the creature's radius
-            if not (creature.selfObject.pos.x < radius or creature.selfObject.pos.x > self.size[0] - radius or 
-                    creature.selfObject.pos.y < radius or creature.selfObject.pos.y > self.size[1] - radius or 
-                    creature.selfObject.pos.z < radius or creature.selfObject.pos.z > self.size[2] - radius):
-                creature.selfObject.pos = vpython.vector(*creature.location)
+            if not (creature.body.pos.x < radius or creature.body.pos.x > self.size[0] - radius or
+                    creature.body.pos.y < radius or creature.body.pos.y > self.size[1] - radius or
+                    creature.body.pos.z < radius or creature.body.pos.z > self.size[2] - radius):
+                creature.body.pos = vpython.vector(*creature.location)
             else:
                 # Set the creature back in bounds considering its radius
                 creature.location = (
-                    max(radius, min(self.size[0] - radius, creature.selfObject.pos.x)),
-                    max(radius, min(self.size[1] - radius, creature.selfObject.pos.y)),
-                    max(radius, min(self.size[2] - radius, creature.selfObject.pos.z))
+                    max(radius, min(self.size[0] - radius, creature.body.pos.x)),
+                    max(radius, min(self.size[1] - radius, creature.body.pos.y)),
+                    max(radius, min(self.size[2] - radius, creature.body.pos.z))
                 )
-                creature.selfObject.pos = vpython.vector(*creature.location)
-                print(f"{creature.name} was out of bounds and has been reset to {creature.location}.")
+                creature.body.pos = vpython.vector(*creature.location)
+                #print(f"{creature.name} was out of bounds and has been reset to {creature.location}.")
+
+    def add_nesw_markers(self, world_center):
+        marker_distance = 12  # Distance from the center of the world
+        marker_size = vpython.vector(1, 1, 1)  # Size of the markers
+
+        # North marker (green)
+        vpython.box(pos=world_center + vpython.vector(0, 0, marker_distance), size=marker_size, color=vpython.color.green)
+
+        # East marker (red)
+        vpython.box(pos=world_center + vpython.vector(marker_distance, 0, 0), size=marker_size, color=vpython.color.red)
+
+        # South marker (blue)
+        vpython.box(pos=world_center + vpython.vector(0, 0, -marker_distance), size=marker_size, color=vpython.color.blue)
+
+        # West marker (yellow)
+        vpython.box(pos=world_center + vpython.vector(-marker_distance, 0, 0), size=marker_size, color=vpython.color.yellow)
